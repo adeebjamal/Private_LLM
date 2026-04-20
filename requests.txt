@@ -1,0 +1,36 @@
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/health' \
+--header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN'
+
+
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations' \
+--header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN'
+
+
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/create' \
+--header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "title": "My First Chat"
+}'
+
+
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
+--header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "conversation_id": "YOUR_CONVERSATION_ID",
+    "query": "Hello! What model are you?",
+    "max_tokens": 500
+}'
+
+
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/messages' \
+--header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "conversation_id": "YOUR_CONVERSATION_ID",
+    "start_row": 1,
+    "end_row": 50
+}'
+
+
