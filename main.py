@@ -8,9 +8,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.responses import StreamingResponse
 from models.schemas import CreateConversationRequest, LoadMessagesRequest, AskQuestionRequest
 import database
 import model
+import time
+import json
 
 # Setup logging
 logging.basicConfig(level = logging.INFO)
@@ -123,17 +126,35 @@ async def ask_question(req: AskQuestionRequest):
         # 2. Fetch last 10 messages for context
         history = database.get_messages(req.conversation_id, limit=10)
         
-        # 3. Generate response using LLM
-        response_text = model.generate_response(history, req.query, req.max_tokens)
-        
-        # 4. Save to database
-        saved_msg = database.save_message(req.conversation_id, req.query, response_text)
-        
-        return {
-            "conversation_id": req.conversation_id,
-            "user_query": saved_msg["user_query"],
-            "response": saved_msg["response"]
-        }
+        # 3. Stream generator to keep connection alive during slow CPU inference
+        def generate():
+            # Yield initial space to start response and prevent proxy timeout
+            yield " "
+            
+            full_response = ""
+            last_yield_time = time.time()
+            
+            for text_chunk in model.generate_response_stream(history, req.query, req.max_tokens):
+                full_response += text_chunk
+                
+                # Yield a space every 15 seconds to keep connection open
+                current_time = time.time()
+                if current_time - last_yield_time > 15:
+                    yield " "
+                    last_yield_time = current_time
+                    
+            # 4. Save to database
+            saved_msg = database.save_message(req.conversation_id, req.query, full_response.strip())
+            
+            # Yield the final JSON
+            final_dict = {
+                "conversation_id": req.conversation_id,
+                "user_query": saved_msg["user_query"],
+                "response": saved_msg["response"]
+            }
+            yield json.dumps(final_dict)
+            
+        return StreamingResponse(generate(), media_type="application/json")
     except HTTPException:
         raise
     except Exception as e:

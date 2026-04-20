@@ -40,16 +40,17 @@ def load_model():
         logger.error(f"Error loading GGUF model: {e}")
         llm = None
 
-def generate_response(history: list, query: str, max_new_tokens: int = 500) -> str:
+def generate_response_stream(history: list, query: str, max_new_tokens: int = 500):
     """
-    Generate a response using Llama's native chat completion.
+    Generate a response using Llama's native chat completion, yielding chunks.
     history format: [{"role": "user", "content": "msg"}, {"role": "assistant", "content": "msg"}]
     """
     global llm
     
     if not llm:
         logger.warning("Generate response called but model is not loaded. Returning placeholder.")
-        return "I am a placeholder AI assistant. Please ensure the model downloaded correctly."
+        yield "I am a placeholder AI assistant. Please ensure the model downloaded correctly."
+        return
         
     # Append the new query to the history
     messages = history.copy()
@@ -61,16 +62,19 @@ def generate_response(history: list, query: str, max_new_tokens: int = 500) -> s
     messages.append({"role": "user", "content": query})
     
     try:
-        # Use llama_cpp's built-in chat formatting
+        # Use llama_cpp's built-in chat formatting with streaming enabled
         response = llm.create_chat_completion(
             messages=messages,
             max_tokens=max_new_tokens,
             temperature=0.7,
+            stream=True
         )
         
-        # Extract the text from the response
-        reply_text = response["choices"][0]["message"]["content"]
-        return reply_text.strip()
+        for chunk in response:
+            delta = chunk["choices"][0].get("delta", {})
+            if "content" in delta:
+                yield delta["content"]
+                
     except Exception as e:
         logger.error(f"Error generating response: {e}")
-        return f"Error generating response: {e}"
+        yield f"Error generating response: {e}"
