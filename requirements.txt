@@ -1,0 +1,7 @@
+fastapi==0.110.0
+uvicorn==0.29.0
+llama-cpp-python
+pydantic
+huggingface-hub
+psycopg2-binary
+python-dotenv==1.0.1

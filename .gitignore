@@ -1,0 +1,15 @@
+# Environment variables (Critical to ignore so your Supabase URL doesn't leak!)
+.env
+
+# Python Virtual Environment and Cache
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Model Cache
+# Ignore everything inside the model_cache folder (so huge model weights aren't pushed to GitHub)
+model_cache/*
+# EXCEPT for the .gitkeep file (which forces Git to commit the empty folder structure)
+!model_cache/.gitkeep
