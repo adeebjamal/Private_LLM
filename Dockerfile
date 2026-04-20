@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the requirements file and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+RUN pip install --no-cache-dir -r requirements.txt --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
 # Copy the rest of the application code
 COPY . .
