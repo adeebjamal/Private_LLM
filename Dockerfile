@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the requirements file and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Limit compilation threads to strictly 1 to prevent OOM errors on Hugging Face
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
+ENV MAKEFLAGS="-j1"
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
