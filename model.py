@@ -29,10 +29,12 @@ def load_model():
         logger.info(f"Loading model into memory from {model_path}...")
         # Load the model via llama_cpp
         # n_ctx is the context window. Llama 3 handles 8k easily, we'll set 4096 for RAM safety
+        # HARDCODE n_threads to 2. HF Spaces free tier only gives 2 vCPUs.
+        # os.cpu_count() returns the host machine's cores (often 64+) which causes extreme thread thrashing and destroys performance.
         llm = Llama(
             model_path=model_path,
             n_ctx=4096,
-            n_threads=os.cpu_count() or 4, # Use all available CPU cores
+            n_threads=2, 
             verbose=False
         )
         logger.info(f"Successfully loaded {filename}")
