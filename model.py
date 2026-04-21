@@ -17,6 +17,26 @@ def load_model():
     filename = os.environ.get("MODEL_FILENAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
     cache_dir = "./model_cache"
     
+    # --- Cache Cleanup Logic ---
+    import shutil
+    os.makedirs(cache_dir, exist_ok=True)
+    model_info_file = os.path.join(cache_dir, ".current_model")
+    current_model_str = f"{repo_id}:{filename}"
+    
+    if os.path.exists(model_info_file):
+        with open(model_info_file, "r") as f:
+            last_model_str = f.read().strip()
+        
+        if last_model_str != current_model_str:
+            logger.info(f"Model changed from {last_model_str} to {current_model_str}. Clearing old cache to save space.")
+            shutil.rmtree(cache_dir)
+            os.makedirs(cache_dir, exist_ok=True)
+    
+    # Save current model info
+    with open(model_info_file, "w") as f:
+        f.write(current_model_str)
+    # ---------------------------
+    
     logger.info(f"Checking for model {repo_id} ({filename}) in {cache_dir}...")
     try:
         # Download the model from HuggingFace Hub (this uses the cache automatically)
