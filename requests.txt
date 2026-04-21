@@ -102,3 +102,39 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/me
 #         }
 #     ]
 # }
+
+
+# -----------------------------------------------------------------------------
+
+# 6. Rename a Conversation
+# Updates the title of an existing conversation.
+curl --location --request PUT 'https://adeebjamal-private-ai-backend.hf.space/conversations/rename' \
+--header 'Content-Type: application/json' \
+--data '{
+    "conversation_id": <REPLACE_WITH_CONVERSATION_ID>,
+    "new_name": "<REPLACE_WITH_NEW_NAME>"
+}'
+
+# Example Response:
+# {
+#     "id": 2,
+#     "title": "Updated Chat Title",
+#     "created_at": "2026-04-21T17:09:16.741250"
+# }
+
+
+# -----------------------------------------------------------------------------
+
+# 7. Delete a Conversation
+# Deletes a conversation and all its associated messages permanently.
+curl --location --request DELETE 'https://adeebjamal-private-ai-backend.hf.space/conversations/delete' \
+--header 'Content-Type: application/json' \
+--data '{
+    "conversation_id": <REPLACE_WITH_CONVERSATION_ID>
+}'
+
+# Example Response:
+# {
+#     "message": "Conversation deleted successfully",
+#     "deleted_id": 2
+# }

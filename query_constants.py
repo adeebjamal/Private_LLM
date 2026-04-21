@@ -51,3 +51,9 @@ GET_PAGINATED_MESSAGES = """
             ORDER BY created_at ASC 
             OFFSET %s LIMIT %s;
             """
+
+RENAME_CONVERSATION = "UPDATE conversations SET title = %s WHERE id = %s RETURNING id, title, created_at;"
+
+DELETE_MESSAGES_BY_CONVERSATION = "DELETE FROM messages WHERE conversation_id = %s;"
+
+DELETE_CONVERSATION = "DELETE FROM conversations WHERE id = %s RETURNING id;"

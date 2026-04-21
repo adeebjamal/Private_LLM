@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import StreamingResponse
-from models.schemas import CreateConversationRequest, LoadMessagesRequest, AskQuestionRequest
+from models.schemas import CreateConversationRequest, LoadMessagesRequest, AskQuestionRequest, RenameConversationRequest, DeleteConversationRequest
 import database
 import model
 import time
@@ -182,6 +182,43 @@ async def ask_question(req: AskQuestionRequest):
         raise
     except Exception as e:
         logger.error(f"Error processing question: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.put("/conversations/rename")
+async def rename_conversation(req: RenameConversationRequest):
+    """Renames an existing conversation."""
+    if not req.new_name or not req.new_name.strip():
+        raise HTTPException(status_code=400, detail="new_name must not be empty")
+
+    try:
+        conv = database.get_conversation(req.conversation_id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="conversation_id not found")
+
+        updated = database.rename_conversation(req.conversation_id, req.new_name.strip())
+        if updated and 'created_at' in updated and updated['created_at']:
+            updated['created_at'] = updated['created_at'].isoformat()
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming conversation: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/conversations/delete")
+async def delete_conversation(req: DeleteConversationRequest):
+    """Deletes a conversation and all its messages."""
+    try:
+        conv = database.get_conversation(req.conversation_id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="conversation_id not found")
+
+        deleted = database.delete_conversation(req.conversation_id)
+        return {"message": "Conversation deleted successfully", "deleted_id": deleted["id"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/health")

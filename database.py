@@ -177,3 +177,44 @@ def get_messages_paginated(conv_id: int, start_row: int, end_row: int):
     finally:
         if conn:
             conn.close()
+
+def rename_conversation(conv_id: int, new_name: str):
+    """Update a conversation's title."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query_constants.RENAME_CONVERSATION, (new_name, conv_id))
+        updated = cursor.fetchone()
+        conn.commit()
+        return dict(updated) if updated else None
+    except Exception as e:
+        logger.error(f"Error renaming conversation: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+def delete_conversation(conv_id: int):
+    """Delete a conversation and all its messages."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Delete messages first (also handled by CASCADE, but explicit is safer)
+        cursor.execute(query_constants.DELETE_MESSAGES_BY_CONVERSATION, (conv_id,))
+        # Delete the conversation itself
+        cursor.execute(query_constants.DELETE_CONVERSATION, (conv_id,))
+        deleted = cursor.fetchone()
+        conn.commit()
+        return dict(deleted) if deleted else None
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()

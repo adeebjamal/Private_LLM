@@ -12,3 +12,10 @@ class AskQuestionRequest(BaseModel):
     conversation_id: int
     query: str
     max_tokens: int = 500
+
+class RenameConversationRequest(BaseModel):
+    conversation_id: int
+    new_name: str
+
+class DeleteConversationRequest(BaseModel):
+    conversation_id: int
