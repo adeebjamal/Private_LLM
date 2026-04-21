@@ -114,37 +114,59 @@ async def load_messages(req: LoadMessagesRequest):
 @app.post("/conversations/ask")
 async def ask_question(req: AskQuestionRequest):
     """Generates response via LLM and saves to DB."""
+    logger.info(f"Received /ask request for conversation_id: {req.conversation_id}")
+    start_req_time = time.time()
+    
     if not req.query or not req.query.strip():
+        logger.warning("Empty query received in /ask")
         raise HTTPException(status_code=400, detail="query must not be empty")
         
     try:
         # 1. Check if conversation exists
         conv = database.get_conversation(req.conversation_id)
         if not conv:
+            logger.warning(f"Conversation {req.conversation_id} not found in DB")
             raise HTTPException(status_code=404, detail="conversation_id must exist")
             
         # 2. Fetch last 10 messages for context
         history = database.get_messages(req.conversation_id, limit=10)
+        logger.info(f"Fetched {len(history)} previous messages for context")
         
         # 3. Stream generator to keep connection alive during slow CPU inference
         def generate():
+            logger.info("Starting LLM generation...")
+            gen_start_time = time.time()
+            
             # Yield initial space to start response and prevent proxy timeout
             yield " "
             
             full_response = ""
             last_yield_time = time.time()
+            first_token_time = None
+            chunk_count = 0
             
             for text_chunk in model.generate_response_stream(history, req.query, req.max_tokens):
+                if first_token_time is None:
+                    first_token_time = time.time()
+                    logger.info(f"Time to first token: {first_token_time - gen_start_time:.2f} seconds")
+                
                 full_response += text_chunk
+                chunk_count += 1
                 
                 # Yield a space every 15 seconds to keep connection open
                 current_time = time.time()
                 if current_time - last_yield_time > 15:
+                    logger.info(f"Yielding keep-alive space. Time elapsed: {current_time - gen_start_time:.2f}s, Chunks generated: {chunk_count}")
                     yield " "
                     last_yield_time = current_time
                     
+            gen_end_time = time.time()
+            logger.info(f"LLM generation complete! Total generation time: {gen_end_time - gen_start_time:.2f} seconds, Total chunks: {chunk_count}")
+                    
             # 4. Save to database
+            db_start = time.time()
             saved_msg = database.save_message(req.conversation_id, req.query, full_response.strip())
+            logger.info(f"Saved generated response to DB in {time.time() - db_start:.2f} seconds")
             
             # Yield the final JSON
             final_dict = {
@@ -152,6 +174,7 @@ async def ask_question(req: AskQuestionRequest):
                 "user_query": saved_msg["user_query"],
                 "response": saved_msg["response"]
             }
+            logger.info(f"Total request processing time: {time.time() - start_req_time:.2f} seconds. Sending final JSON response.")
             yield json.dumps(final_dict)
             
         return StreamingResponse(generate(), media_type="application/json")
