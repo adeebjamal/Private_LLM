@@ -1,36 +1,48 @@
-curl --location 'https://adeebjamal-private-ai-backend.hf.space/health' \
---header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN'
+# -----------------------------------------------------------------------------
+# AI Assistant Backend API Requests
+# Base URL: https://adeebjamal-private-ai-backend.hf.space
+# 
+# Note: Since the Hugging Face Space is Public, these APIs can be called
+# directly without needing an Authorization header.
+# -----------------------------------------------------------------------------
+
+# 1. Health Check
+# Returns the health status of the server.
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/health'
 
 
-curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations' \
---header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN'
+# 2. List All Conversations
+# Returns a list of all chat topics with their IDs and message counts.
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations'
 
 
+# 3. Create a New Conversation
+# Creates a new chat topic. You will need the returned "id" for subsequent requests.
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/create' \
---header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
 --header 'Content-Type: application/json' \
 --data '{
-    "title": "My First Chat"
+    "title": "<REPLACE_WITH_CHAT_TITLE>"
 }'
 
 
-curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
---header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
+# 4. Ask a Question (Generate AI Response)
+# Sends a message to the AI. It fetches the conversation history automatically.
+# Uses --max-time 300 to prevent the client from timing out during long generations.
+curl --max-time 300 --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
 --header 'Content-Type: application/json' \
 --data '{
-    "conversation_id": "YOUR_CONVERSATION_ID",
-    "query": "Hello! What model are you?",
+    "conversation_id": <REPLACE_WITH_CONVERSATION_ID>,
+    "query": "<REPLACE_WITH_YOUR_QUESTION_HERE>",
     "max_tokens": 500
 }'
 
 
+# 5. Load Chat History (Paginated)
+# Returns the history of messages for a specific conversation.
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/messages' \
---header 'Authorization: Bearer YOUR_HF_ACCESS_TOKEN' \
 --header 'Content-Type: application/json' \
 --data '{
-    "conversation_id": "YOUR_CONVERSATION_ID",
+    "conversation_id": <REPLACE_WITH_CONVERSATION_ID>,
     "start_row": 1,
     "end_row": 50
 }'
-
-
