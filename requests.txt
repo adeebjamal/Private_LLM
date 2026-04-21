@@ -10,11 +10,32 @@
 # Returns the health status of the server.
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/health'
 
+# Example Response:
+# {
+#     "status": "healthy"
+# }
+
+
+# -----------------------------------------------------------------------------
 
 # 2. List All Conversations
 # Returns a list of all chat topics with their IDs and message counts.
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations'
 
+# Example Response:
+# {
+#     "conversations": [
+#         {
+#             "id": 1,
+#             "title": "My First Chat",
+#             "created_at": "2026-04-20T21:52:29.230613",
+#             "message_count": 5
+#         }
+#     ]
+# }
+
+
+# -----------------------------------------------------------------------------
 
 # 3. Create a New Conversation
 # Creates a new chat topic. You will need the returned "id" for subsequent requests.
@@ -24,6 +45,15 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/cr
     "title": "<REPLACE_WITH_CHAT_TITLE>"
 }'
 
+# Example Response:
+# {
+#     "id": 2,
+#     "title": "React Project",
+#     "created_at": "2026-04-21T17:09:16.741250"
+# }
+
+
+# -----------------------------------------------------------------------------
 
 # 4. Ask a Question (Generate AI Response)
 # Sends a message to the AI. It fetches the conversation history automatically.
@@ -36,6 +66,15 @@ curl --max-time 300 --location 'https://adeebjamal-private-ai-backend.hf.space/c
     "max_tokens": 500
 }'
 
+# Example Response:
+# {
+#     "conversation_id": 2,
+#     "user_query": "What is React?",
+#     "response": "React is a popular JavaScript library for building user interfaces."
+# }
+
+
+# -----------------------------------------------------------------------------
 
 # 5. Load Chat History (Paginated)
 # Returns the history of messages for a specific conversation.
@@ -46,3 +85,20 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/me
     "start_row": 1,
     "end_row": 50
 }'
+
+# Example Response:
+# {
+#     "conversation_id": 2,
+#     "conversation_title": "React Project",
+#     "start_row": 1,
+#     "end_row": 50,
+#     "total_messages": 1,
+#     "messages": [
+#         {
+#             "id": 1,
+#             "user_query": "What is React?",
+#             "response": "React is a popular JavaScript library for building user interfaces.",
+#             "created_at": "2026-04-21T17:15:00.000000"
+#         }
+#     ]
+# }
