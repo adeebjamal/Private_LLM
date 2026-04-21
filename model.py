@@ -13,8 +13,8 @@ def load_model():
     
     # We will use Llama-3.1-8B-Instruct in 4-bit GGUF by default if not set
     # The user can still set a different GGUF model via env variables if they want
-    repo_id = os.environ.get("MODEL_ID", "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
-    filename = os.environ.get("MODEL_FILENAME", "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")
+    repo_id = os.environ.get("MODEL_ID", "bartowski/Llama-3.2-3B-Instruct-GGUF")
+    filename = os.environ.get("MODEL_FILENAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
     cache_dir = "./model_cache"
     
     logger.info(f"Checking for model {repo_id} ({filename}) in {cache_dir}...")
