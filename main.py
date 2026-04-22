@@ -8,12 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi.responses import StreamingResponse
 from models.schemas import CreateConversationRequest, LoadMessagesRequest, AskQuestionRequest, RenameConversationRequest, DeleteConversationRequest
 import database
 import model
 import time
 import json
+import uuid
+import threading
 
 # Setup logging
 logging.basicConfig(level = logging.INFO)
@@ -42,6 +43,57 @@ app = FastAPI(title = "AI Assistant API", lifespan = lifespan)
 
 # Add CORS middleware
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],)
+
+# --- In-memory task store for async ask processing ---
+# Format: { task_id: { "status": "processing" | "completed" | "failed", "result": {...} | None, "error": str | None } }
+task_store: dict[str, dict] = {}
+
+def _process_ask_in_background(task_id: str, conversation_id: int, query: str, max_tokens: int, history: list):
+    """Background worker: runs LLM generation and saves result to DB. Updates task_store on completion."""
+    logger.info(f"[Task {task_id}] Background processing started for conversation {conversation_id}")
+    start_time = time.time()
+    
+    try:
+        # 1. Generate full response from LLM (streaming internally, collecting all chunks)
+        logger.info(f"[Task {task_id}] Starting LLM generation...")
+        gen_start = time.time()
+        full_response = ""
+        chunk_count = 0
+        first_token_time = None
+        
+        for text_chunk in model.generate_response_stream(history, query, max_tokens):
+            if first_token_time is None:
+                first_token_time = time.time()
+                logger.info(f"[Task {task_id}] Time to first token: {first_token_time - gen_start:.2f}s")
+            full_response += text_chunk
+            chunk_count += 1
+        
+        logger.info(f"[Task {task_id}] LLM generation complete in {time.time() - gen_start:.2f}s, chunks: {chunk_count}")
+        
+        # 2. Save to database
+        db_start = time.time()
+        saved_msg = database.save_message(conversation_id, query, full_response.strip())
+        logger.info(f"[Task {task_id}] Saved to DB in {time.time() - db_start:.2f}s")
+        
+        # 3. Update task store with completed result
+        task_store[task_id] = {
+            "status": "completed",
+            "result": {
+                "conversation_id": conversation_id,
+                "user_query": saved_msg["user_query"],
+                "response": saved_msg["response"]
+            },
+            "error": None
+        }
+        logger.info(f"[Task {task_id}] Total background processing time: {time.time() - start_time:.2f}s")
+        
+    except Exception as e:
+        logger.error(f"[Task {task_id}] Background processing failed: {e}")
+        task_store[task_id] = {
+            "status": "failed",
+            "result": None,
+            "error": str(e)
+        }
 
 
 
@@ -111,11 +163,10 @@ async def load_messages(req: LoadMessagesRequest):
         logger.error(f"Error loading messages: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/conversations/ask")
+@app.post("/conversations/ask", status_code=202)
 async def ask_question(req: AskQuestionRequest):
-    """Generates response via LLM and saves to DB."""
+    """Accepts user query, delegates LLM generation to a background thread, and returns immediately with a task_id."""
     logger.info(f"Received /ask request for conversation_id: {req.conversation_id}")
-    start_req_time = time.time()
     
     if not req.query or not req.query.strip():
         logger.warning("Empty query received in /ask")
@@ -128,61 +179,66 @@ async def ask_question(req: AskQuestionRequest):
             logger.warning(f"Conversation {req.conversation_id} not found in DB")
             raise HTTPException(status_code=404, detail="conversation_id must exist")
             
-        # 2. Fetch last 10 messages for context
+        # 2. Fetch last 10 messages for context (lightweight DB read, done before dispatching)
         history = database.get_messages(req.conversation_id, limit=10)
         logger.info(f"Fetched {len(history)} previous messages for context")
         
-        # 3. Stream generator to keep connection alive during slow CPU inference
-        def generate():
-            logger.info("Starting LLM generation...")
-            gen_start_time = time.time()
-            
-            # Yield initial space to start response and prevent proxy timeout
-            yield " "
-            
-            full_response = ""
-            last_yield_time = time.time()
-            first_token_time = None
-            chunk_count = 0
-            
-            for text_chunk in model.generate_response_stream(history, req.query, req.max_tokens):
-                if first_token_time is None:
-                    first_token_time = time.time()
-                    logger.info(f"Time to first token: {first_token_time - gen_start_time:.2f} seconds")
-                
-                full_response += text_chunk
-                chunk_count += 1
-                
-                # Yield a space every 15 seconds to keep connection open
-                current_time = time.time()
-                if current_time - last_yield_time > 15:
-                    logger.info(f"Yielding keep-alive space. Time elapsed: {current_time - gen_start_time:.2f}s, Chunks generated: {chunk_count}")
-                    yield " "
-                    last_yield_time = current_time
-                    
-            gen_end_time = time.time()
-            logger.info(f"LLM generation complete! Total generation time: {gen_end_time - gen_start_time:.2f} seconds, Total chunks: {chunk_count}")
-                    
-            # 4. Save to database
-            db_start = time.time()
-            saved_msg = database.save_message(req.conversation_id, req.query, full_response.strip())
-            logger.info(f"Saved generated response to DB in {time.time() - db_start:.2f} seconds")
-            
-            # Yield the final JSON
-            final_dict = {
-                "conversation_id": req.conversation_id,
-                "user_query": saved_msg["user_query"],
-                "response": saved_msg["response"]
-            }
-            logger.info(f"Total request processing time: {time.time() - start_req_time:.2f} seconds. Sending final JSON response.")
-            yield json.dumps(final_dict)
-            
-        return StreamingResponse(generate(), media_type="application/json")
+        # 3. Create a task ID and register it as "processing"
+        task_id = str(uuid.uuid4())
+        task_store[task_id] = {
+            "status": "processing",
+            "result": None,
+            "error": None
+        }
+        
+        # 4. Dispatch background thread for LLM generation + DB save
+        thread = threading.Thread(
+            target=_process_ask_in_background,
+            args=(task_id, req.conversation_id, req.query, req.max_tokens, history),
+            daemon=True
+        )
+        thread.start()
+        logger.info(f"Dispatched background task {task_id} for conversation {req.conversation_id}")
+        
+        # 5. Return immediately with 202 Accepted
+        return {
+            "status": "accepted",
+            "task_id": task_id,
+            "message": "Your question is being processed. Poll /conversations/ask/status/{task_id} for the result."
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing question: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/conversations/ask/status/{task_id}")
+async def get_ask_status(task_id: str):
+    """Poll this endpoint to check if the background LLM task has completed."""
+    task = task_store.get(task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="task_id not found")
+    
+    if task["status"] == "processing":
+        return {
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Still generating response. Please poll again."
+        }
+    elif task["status"] == "completed":
+        # Clean up from store after delivering result
+        result = task["result"]
+        del task_store[task_id]
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "result": result
+        }
+    else:  # failed
+        error = task["error"]
+        del task_store[task_id]
+        raise HTTPException(status_code=500, detail=f"Task failed: {error}")
 
 @app.put("/conversations/rename")
 async def rename_conversation(req: RenameConversationRequest):
