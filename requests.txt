@@ -55,10 +55,11 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/cr
 
 # -----------------------------------------------------------------------------
 
-# 4. Ask a Question (Generate AI Response)
-# Sends a message to the AI. It fetches the conversation history automatically.
-# Uses --max-time 300 to prevent the client from timing out during long generations.
-curl --max-time 300 --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
+# 4. Ask a Question (Submit for Background Processing)
+# Sends a message to the AI. Returns immediately with a task_id (HTTP 202 Accepted).
+# The LLM generation and DB save happen in the background.
+# Use the task_id to poll for the result via the status endpoint (step 5).
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
 --header 'Content-Type: application/json' \
 --data '{
     "conversation_id": <REPLACE_WITH_CONVERSATION_ID>,
@@ -66,17 +67,48 @@ curl --max-time 300 --location 'https://adeebjamal-private-ai-backend.hf.space/c
     "max_tokens": 500
 }'
 
-# Example Response:
+# Example Response (HTTP 202 Accepted):
 # {
-#     "conversation_id": 2,
-#     "user_query": "What is React?",
-#     "response": "React is a popular JavaScript library for building user interfaces."
+#     "status": "accepted",
+#     "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+#     "message": "Your question is being processed. Poll /conversations/ask/status/{task_id} for the result."
 # }
 
 
 # -----------------------------------------------------------------------------
 
-# 5. Load Chat History (Paginated)
+# 5. Poll Ask Status (Get AI Response)
+# After submitting a question, poll this endpoint with the task_id to check if
+# the AI response is ready. Recommended polling interval: 3-5 seconds.
+curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask/status/<REPLACE_WITH_TASK_ID>'
+
+# Example Response (Still processing):
+# {
+#     "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+#     "status": "processing",
+#     "message": "Still generating response. Please poll again."
+# }
+
+# Example Response (Completed):
+# {
+#     "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+#     "status": "completed",
+#     "result": {
+#         "conversation_id": 2,
+#         "user_query": "What is React?",
+#         "response": "React is a popular JavaScript library for building user interfaces."
+#     }
+# }
+
+# Example Response (Failed - HTTP 500):
+# {
+#     "detail": "Task failed: <error message>"
+# }
+
+
+# -----------------------------------------------------------------------------
+
+# 6. Load Chat History (Paginated)
 # Returns the history of messages for a specific conversation.
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/messages' \
 --header 'Content-Type: application/json' \
@@ -106,7 +138,7 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/me
 
 # -----------------------------------------------------------------------------
 
-# 6. Rename a Conversation
+# 7. Rename a Conversation
 # Updates the title of an existing conversation.
 curl --location --request PUT 'https://adeebjamal-private-ai-backend.hf.space/conversations/rename' \
 --header 'Content-Type: application/json' \
@@ -125,7 +157,7 @@ curl --location --request PUT 'https://adeebjamal-private-ai-backend.hf.space/co
 
 # -----------------------------------------------------------------------------
 
-# 7. Delete a Conversation
+# 8. Delete a Conversation
 # Deletes a conversation and all its associated messages permanently.
 curl --location --request DELETE 'https://adeebjamal-private-ai-backend.hf.space/conversations/delete' \
 --header 'Content-Type: application/json' \

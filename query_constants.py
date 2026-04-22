@@ -48,7 +48,7 @@ GET_PAGINATED_MESSAGES = """
             SELECT id, user_query, response, created_at 
             FROM messages 
             WHERE conversation_id = %s 
-            ORDER BY created_at ASC 
+            ORDER BY created_at DESC 
             OFFSET %s LIMIT %s;
             """
 
