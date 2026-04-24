@@ -19,7 +19,7 @@ import threading
 from typing import List, Dict
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
 except Exception:  # pragma: no cover - graceful fallback when dependency missing
     DDGS = None
 
@@ -98,7 +98,7 @@ def _should_use_web_search(query: str, history: list) -> bool:
 def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
     """Fetch web search snippets from DuckDuckGo without API keys."""
     if DDGS is None:
-        logger.warning("duckduckgo_search is not installed. Skipping web search.")
+        logger.warning("ddgs is not installed. Skipping web search.")
         return []
 
     try:
