@@ -18,7 +18,7 @@ COPY requirements.txt .
 # Limit compilation threads to strictly 1 to prevent OOM errors on Hugging Face
 ENV CMAKE_BUILD_PARALLEL_LEVEL=1
 ENV MAKEFLAGS="-j1"
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
