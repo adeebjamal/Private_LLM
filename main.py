@@ -211,7 +211,7 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
 
 # --- Endpoints ---
 
-@app.get("/"):
+@app.get("/")
 async def root():
     return {"message": "Hello, World!"}
 
