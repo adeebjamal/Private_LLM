@@ -85,8 +85,10 @@ def _should_use_web_search(query: str, history: list) -> bool:
 
     verdict = gate_output.strip().upper()
     if verdict.startswith("YES"):
+        logger.info(f"Web search required for query")
         return True
     if verdict.startswith("NO"):
+        logger.info(f"Web search not required for query")
         return False
 
     logger.info(f"Unclear gate response '{gate_output}'. Defaulting to no web search.")
