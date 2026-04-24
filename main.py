@@ -117,6 +117,8 @@ def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
                 "snippet": (item.get("body") or "").strip(),
             }
         )
+    
+    logger.info(f"DuckDuckGo search results: {normalized_results}")
     return normalized_results
 
 
