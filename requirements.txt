@@ -5,3 +5,4 @@ pydantic
 huggingface-hub
 psycopg2-binary
 python-dotenv==1.0.1
+duckduckgo-search

@@ -1,4 +1,5 @@
 import logging
+import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file before anything else
@@ -15,6 +16,12 @@ import time
 import json
 import uuid
 import threading
+from typing import List, Dict
+
+try:
+    from duckduckgo_search import DDGS
+except Exception:  # pragma: no cover - graceful fallback when dependency missing
+    DDGS = None
 
 # Setup logging
 logging.basicConfig(level = logging.INFO)
@@ -48,12 +55,114 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 # Format: { task_id: { "status": "processing" | "completed" | "failed", "result": {...} | None, "error": str | None } }
 task_store: dict[str, dict] = {}
 
+WEB_SEARCH_MODE = os.environ.get("WEB_SEARCH_MODE", "auto").strip().lower()
+WEB_SEARCH_MAX_RESULTS = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "5"))
+WEB_SEARCH_GATE_MAX_TOKENS = int(os.environ.get("WEB_SEARCH_GATE_MAX_TOKENS", "3"))
+
+
+def _should_use_web_search(query: str, history: list) -> bool:
+    """Decide if we should use web search, with an LLM-based gate in auto mode."""
+    if WEB_SEARCH_MODE == "always":
+        return True
+    if WEB_SEARCH_MODE == "off":
+        return False
+
+    gate_prompt = (
+        "You are a routing classifier.\n"
+        "Decide if internet/web search is required to answer the user's query well.\n"
+        "Reply with exactly one word: YES or NO.\n\n"
+        f"User query: {query}"
+    )
+    gate_output = ""
+    try:
+        for chunk in model.generate_response_stream(history, gate_prompt, WEB_SEARCH_GATE_MAX_TOKENS):
+            gate_output += chunk
+            if len(gate_output) >= 8:
+                break
+    except Exception as e:
+        logger.warning(f"LLM gate failed, defaulting to no web search: {e}")
+        return False
+
+    verdict = gate_output.strip().upper()
+    if verdict.startswith("YES"):
+        return True
+    if verdict.startswith("NO"):
+        return False
+
+    logger.info(f"Unclear gate response '{gate_output}'. Defaulting to no web search.")
+    return False
+
+
+def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
+    """Fetch web search snippets from DuckDuckGo without API keys."""
+    if DDGS is None:
+        logger.warning("duckduckgo_search is not installed. Skipping web search.")
+        return []
+
+    try:
+        with DDGS() as ddgs:
+            raw_results = ddgs.text(query, max_results=max_results) or []
+    except Exception as e:
+        logger.warning(f"DuckDuckGo search failed: {e}")
+        return []
+
+    normalized_results: List[Dict[str, str]] = []
+    for item in raw_results:
+        normalized_results.append(
+            {
+                "title": (item.get("title") or "").strip(),
+                "url": (item.get("href") or "").strip(),
+                "snippet": (item.get("body") or "").strip(),
+            }
+        )
+    return normalized_results
+
+
+def _build_query_with_web_context(user_query: str, web_results: List[Dict[str, str]]) -> str:
+    """Attach concise web evidence for the LLM to ground its answer."""
+    if not web_results:
+        return user_query
+
+    lines = [
+        "Use the web snippets below only as supporting context.",
+        "If snippets are insufficient, say so clearly.",
+        "",
+        "Web results:",
+    ]
+    for idx, result in enumerate(web_results, start=1):
+        lines.append(f"{idx}. {result['title']}")
+        lines.append(f"   URL: {result['url']}")
+        lines.append(f"   Snippet: {result['snippet']}")
+    lines.append("")
+    lines.append(f"User question: {user_query}")
+    return "\n".join(lines)
+
+
+def _format_sources_block(web_results: List[Dict[str, str]]) -> str:
+    """Render source URLs for transparency in final output."""
+    if not web_results:
+        return ""
+
+    source_lines = ["", "", "Sources:"]
+    for idx, result in enumerate(web_results, start=1):
+        if result["url"]:
+            source_lines.append(f"{idx}. {result['title']} - {result['url']}")
+    return "\n".join(source_lines)
+
 def _process_ask_in_background(task_id: str, conversation_id: int, query: str, max_tokens: int, history: list):
     """Background worker: runs LLM generation and saves result to DB. Updates task_store on completion."""
     logger.info(f"[Task {task_id}] Background processing started for conversation {conversation_id}")
     start_time = time.time()
     
     try:
+        # 0. Optional internet retrieval decided by routing mode / LLM gate
+        web_results: List[Dict[str, str]] = []
+        query_for_model = query
+        if _should_use_web_search(query, history):
+            logger.info(f"[Task {task_id}] Running DuckDuckGo search for query")
+            web_results = _duckduckgo_search(query, WEB_SEARCH_MAX_RESULTS)
+            query_for_model = _build_query_with_web_context(query, web_results)
+
         # 1. Generate full response from LLM (streaming internally, collecting all chunks)
         logger.info(f"[Task {task_id}] Starting LLM generation...")
         gen_start = time.time()
@@ -61,7 +170,7 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
         chunk_count = 0
         first_token_time = None
         
-        for text_chunk in model.generate_response_stream(history, query, max_tokens):
+        for text_chunk in model.generate_response_stream(history, query_for_model, max_tokens):
             if first_token_time is None:
                 first_token_time = time.time()
                 logger.info(f"[Task {task_id}] Time to first token: {first_token_time - gen_start:.2f}s")
@@ -72,7 +181,8 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
         
         # 2. Save to database
         db_start = time.time()
-        saved_msg = database.save_message(conversation_id, query, full_response.strip())
+        final_response = f"{full_response.strip()}{_format_sources_block(web_results)}".strip()
+        saved_msg = database.save_message(conversation_id, query, final_response)
         logger.info(f"[Task {task_id}] Saved to DB in {time.time() - db_start:.2f}s")
         
         # 3. Update task store with completed result
@@ -98,6 +208,10 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
 
 
 # --- Endpoints ---
+
+@app.get("/"):
+async def root():
+    return {"message": "Hello, World!"}
 
 @app.get("/conversations")
 async def get_conversations():
