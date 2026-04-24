@@ -61,7 +61,8 @@ WEB_SEARCH_GATE_MAX_TOKENS = int(os.environ.get("WEB_SEARCH_GATE_MAX_TOKENS", "3
 
 
 def _should_use_web_search(query: str, history: list) -> bool:
-    """Decide if we should use web search, with an LLM-based gate in auto mode."""
+    """Legacy gate kept for compatibility; /ask now uses client-provided use_internet."""
+    logger.info(f"Deciding if we should use web search for query: {query}")
     if WEB_SEARCH_MODE == "always":
         return True
     if WEB_SEARCH_MODE == "off":
@@ -85,10 +86,10 @@ def _should_use_web_search(query: str, history: list) -> bool:
 
     verdict = gate_output.strip().upper()
     if verdict.startswith("YES"):
-        logger.info(f"Web search required for query")
+        logger.info("Web search required for query")
         return True
     if verdict.startswith("NO"):
-        logger.info(f"Web search not required for query")
+        logger.info("Web search not required for query")
         return False
 
     logger.info(f"Unclear gate response '{gate_output}'. Defaulting to no web search.")
@@ -96,7 +97,7 @@ def _should_use_web_search(query: str, history: list) -> bool:
 
 
 def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
-    """Fetch web search snippets from DuckDuckGo without API keys."""
+    logger.info(f"Fetching web search snippets from DuckDuckGo for query: {query}")
     if DDGS is None:
         logger.warning("ddgs is not installed. Skipping web search.")
         return []
@@ -123,7 +124,7 @@ def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
 
 
 def _build_query_with_web_context(user_query: str, web_results: List[Dict[str, str]]) -> str:
-    """Attach concise web evidence for the LLM to ground its answer."""
+    logger.info(f"Building query with web context for user query: {user_query}")
     if not web_results:
         return user_query
 
@@ -143,7 +144,7 @@ def _build_query_with_web_context(user_query: str, web_results: List[Dict[str, s
 
 
 def _format_sources_block(web_results: List[Dict[str, str]]) -> str:
-    """Render source URLs for transparency in final output."""
+    logger.info(f"Rendering source URLs for transparency in final output")
     if not web_results:
         return ""
 
@@ -153,19 +154,20 @@ def _format_sources_block(web_results: List[Dict[str, str]]) -> str:
             source_lines.append(f"{idx}. {result['title']} - {result['url']}")
     return "\n".join(source_lines)
 
-def _process_ask_in_background(task_id: str, conversation_id: int, query: str, max_tokens: int, history: list):
-    """Background worker: runs LLM generation and saves result to DB. Updates task_store on completion."""
+def _process_ask_in_background(task_id: str, conversation_id: int, query: str, max_tokens: int, history: list, use_internet: bool):
     logger.info(f"[Task {task_id}] Background processing started for conversation {conversation_id}")
     start_time = time.time()
     
     try:
-        # 0. Optional internet retrieval decided by routing mode / LLM gate
+        # 0. Optional internet retrieval controlled by client request payload
         web_results: List[Dict[str, str]] = []
         query_for_model = query
-        if _should_use_web_search(query, history):
-            logger.info(f"[Task {task_id}] Running DuckDuckGo search for query")
+        if use_internet:
+            logger.info(f"[Task {task_id}] use_internet=true, running DuckDuckGo search")
             web_results = _duckduckgo_search(query, WEB_SEARCH_MAX_RESULTS)
             query_for_model = _build_query_with_web_context(query, web_results)
+        else:
+            logger.info(f"[Task {task_id}] use_internet=false, skipping web search")
 
         # 1. Generate full response from LLM (streaming internally, collecting all chunks)
         logger.info(f"[Task {task_id}] Starting LLM generation...")
@@ -312,7 +314,7 @@ async def ask_question(req: AskQuestionRequest):
         # 4. Dispatch background thread for LLM generation + DB save
         thread = threading.Thread(
             target=_process_ask_in_background,
-            args=(task_id, req.conversation_id, req.query, req.max_tokens, history),
+            args=(task_id, req.conversation_id, req.query, req.max_tokens, history, req.use_internet),
             daemon=True
         )
         thread.start()

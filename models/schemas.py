@@ -12,6 +12,7 @@ class AskQuestionRequest(BaseModel):
     conversation_id: int
     query: str
     max_tokens: int = 500
+    use_internet: bool = False
 
 class RenameConversationRequest(BaseModel):
     conversation_id: int
