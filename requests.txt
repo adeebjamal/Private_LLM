@@ -58,13 +58,15 @@ curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/cr
 # 4. Ask a Question (Submit for Background Processing)
 # Sends a message to the AI. Returns immediately with a task_id (HTTP 202 Accepted).
 # The LLM generation and DB save happen in the background.
+# Set use_internet=true to enable web search, false to disable it completely.
 # Use the task_id to poll for the result via the status endpoint (step 5).
 curl --location 'https://adeebjamal-private-ai-backend.hf.space/conversations/ask' \
 --header 'Content-Type: application/json' \
 --data '{
     "conversation_id": <REPLACE_WITH_CONVERSATION_ID>,
     "query": "<REPLACE_WITH_YOUR_QUESTION_HERE>",
-    "max_tokens": 500
+    "max_tokens": 500,
+    "use_internet": false
 }'
 
 # Example Response (HTTP 202 Accepted):

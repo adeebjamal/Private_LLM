@@ -6,3 +6,6 @@ huggingface-hub
 psycopg2-binary
 python-dotenv==1.0.1
 ddgs
+requests
+beautifulsoup4
+lxml

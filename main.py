@@ -23,6 +23,16 @@ try:
 except Exception:  # pragma: no cover - graceful fallback when dependency missing
     DDGS = None
 
+try:
+    import requests as _requests
+except ImportError:  # pragma: no cover
+    _requests = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:  # pragma: no cover
+    BeautifulSoup = None
+
 # Setup logging
 logging.basicConfig(level = logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,6 +68,8 @@ task_store: dict[str, dict] = {}
 WEB_SEARCH_MODE = os.environ.get("WEB_SEARCH_MODE", "auto").strip().lower()
 WEB_SEARCH_MAX_RESULTS = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "5"))
 WEB_SEARCH_GATE_MAX_TOKENS = int(os.environ.get("WEB_SEARCH_GATE_MAX_TOKENS", "3"))
+WEB_SEARCH_ARTICLES_TO_FETCH = int(os.environ.get("WEB_SEARCH_ARTICLES_TO_FETCH", "3"))  # how many URLs to open fully
+WEB_SEARCH_ARTICLE_MAX_CHARS = int(os.environ.get("WEB_SEARCH_ARTICLE_MAX_CHARS", "3000"))  # chars to keep per article
 
 
 def _should_use_web_search(query: str, history: list) -> bool:
@@ -116,11 +128,63 @@ def _duckduckgo_search(query: str, max_results: int) -> List[Dict[str, str]]:
                 "title": (item.get("title") or "").strip(),
                 "url": (item.get("href") or "").strip(),
                 "snippet": (item.get("body") or "").strip(),
+                "content": "",  # populated later by _fetch_article_text
             }
         )
     
-    logger.info(f"DuckDuckGo search results: {normalized_results}")
+    logger.info(f"DuckDuckGo returned {len(normalized_results)} results")
     return normalized_results
+
+
+# Tags whose entire subtree is noise (ads, scripts, navigation, etc.)
+_JUNK_TAGS = ["script", "style", "noscript", "nav", "header", "footer",
+              "aside", "form", "iframe", "figure", "figcaption"]
+
+
+def _fetch_article_text(url: str, max_chars: int = 3000) -> str:
+    """Fetch a URL and return clean, readable article text stripped of ads/navigation."""
+    if _requests is None or BeautifulSoup is None:
+        logger.warning("requests or beautifulsoup4 not installed; cannot fetch article.")
+        return ""
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0 Safari/537.36"
+            )
+        }
+        resp = _requests.get(url, headers=headers, timeout=8)
+        resp.raise_for_status()
+        # lxml is faster but optional; html.parser is always available in Python stdlib
+        try:
+            soup = BeautifulSoup(resp.text, "lxml")
+        except Exception:
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Remove all noisy/ad elements
+        for tag in _JUNK_TAGS:
+            for el in soup.find_all(tag):
+                el.decompose()
+
+        # Prefer semantic content containers; fall back to full body
+        content_el = (
+            soup.find("article")
+            or soup.find("main")
+            or soup.find(id="content")
+            or soup.find(id="main-content")
+            or soup.find("body")
+        )
+        if not content_el:
+            return ""
+
+        text = content_el.get_text(separator=" ", strip=True)
+        # Collapse excessive whitespace
+        text = " ".join(text.split())
+        return text[:max_chars]
+    except Exception as e:
+        logger.warning(f"Failed to fetch article from {url}: {e}")
+        return ""
 
 
 def _build_query_with_web_context(user_query: str, web_results: List[Dict[str, str]]) -> str:
@@ -129,15 +193,18 @@ def _build_query_with_web_context(user_query: str, web_results: List[Dict[str, s
         return user_query
 
     lines = [
-        "Use the web snippets below only as supporting context.",
-        "If snippets are insufficient, say so clearly.",
+        "Use the web content below as supporting context to answer accurately.",
+        "If the content is insufficient, say so clearly.",
         "",
         "Web results:",
     ]
     for idx, result in enumerate(web_results, start=1):
         lines.append(f"{idx}. {result['title']}")
         lines.append(f"   URL: {result['url']}")
-        lines.append(f"   Snippet: {result['snippet']}")
+        # Prefer full article content; fall back to DuckDuckGo snippet
+        body = result.get("content") or result.get("snippet", "")
+        if body:
+            lines.append(f"   Content: {body}")
     lines.append("")
     lines.append(f"User question: {user_query}")
     return "\n".join(lines)
@@ -165,6 +232,11 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
         if use_internet:
             logger.info(f"[Task {task_id}] use_internet=true, running DuckDuckGo search")
             web_results = _duckduckgo_search(query, WEB_SEARCH_MAX_RESULTS)
+            # Fetch full article text for the top N results
+            for result in web_results[:WEB_SEARCH_ARTICLES_TO_FETCH]:
+                if result.get("url"):
+                    logger.info(f"[Task {task_id}] Fetching article: {result['url']}")
+                    result["content"] = _fetch_article_text(result["url"], WEB_SEARCH_ARTICLE_MAX_CHARS)
             query_for_model = _build_query_with_web_context(query, web_results)
         else:
             logger.info(f"[Task {task_id}] use_internet=false, skipping web search")
