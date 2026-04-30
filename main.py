@@ -238,6 +238,7 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
                     logger.info(f"[Task {task_id}] Fetching article: {result['url']}")
                     result["content"] = _fetch_article_text(result["url"], WEB_SEARCH_ARTICLE_MAX_CHARS)
             query_for_model = _build_query_with_web_context(query, web_results)
+            logger.info(f"[Task {task_id}] Web context being fed to LLM:\n{query_for_model}")
         else:
             logger.info(f"[Task {task_id}] use_internet=false, skipping web search")
 
