@@ -15,6 +15,7 @@ def load_model():
     # The user can still set a different GGUF model via env variables if they want
     repo_id = os.environ.get("MODEL_ID", "bartowski/Llama-3.2-3B-Instruct-GGUF")
     filename = os.environ.get("MODEL_FILENAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
+    logger.info(f"Loading model - MODEL_ID: {repo_id}, MODEL_FILENAME: {filename}")
     cache_dir = "./model_cache"
     
     # --- Cache Cleanup Logic ---
