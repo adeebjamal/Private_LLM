@@ -221,8 +221,8 @@ def _format_sources_block(web_results: List[Dict[str, str]]) -> str:
             source_lines.append(f"{idx}. {result['title']} - {result['url']}")
     return "\n".join(source_lines)
 
-def _process_ask_in_background(task_id: str, conversation_id: int, query: str, max_tokens: int, history: list, use_internet: bool):
-    logger.info(f"[Task {task_id}] Background processing started for conversation {conversation_id}")
+def _process_ask_in_background(task_id: str, message_id: int, conversation_id: int, query: str, max_tokens: int, history: list, use_internet: bool):
+    logger.info(f"[Task {task_id}] Background processing started for conversation {conversation_id}, message_id={message_id}")
     start_time = time.time()
     
     try:
@@ -258,19 +258,19 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
         
         logger.info(f"[Task {task_id}] LLM generation complete in {time.time() - gen_start:.2f}s, chunks: {chunk_count}")
         
-        # 2. Save to database
+        # 2. Update existing message row with the real response
         db_start = time.time()
         final_response = f"{full_response.strip()}{_format_sources_block(web_results)}".strip()
-        saved_msg = database.save_message(conversation_id, query, final_response)
-        logger.info(f"[Task {task_id}] Saved to DB in {time.time() - db_start:.2f}s")
+        updated_msg = database.update_message_response(message_id, final_response)
+        logger.info(f"[Task {task_id}] Updated message {message_id} in DB in {time.time() - db_start:.2f}s")
         
         # 3. Update task store with completed result
         task_store[task_id] = {
             "status": "completed",
             "result": {
                 "conversation_id": conversation_id,
-                "user_query": saved_msg["user_query"],
-                "response": saved_msg["response"]
+                "user_query": updated_msg["user_query"],
+                "response": updated_msg["response"]
             },
             "error": None
         }
@@ -278,6 +278,10 @@ def _process_ask_in_background(task_id: str, conversation_id: int, query: str, m
         
     except Exception as e:
         logger.error(f"[Task {task_id}] Background processing failed: {e}")
+        try:
+            database.update_message_response(message_id, f"Request failed: {str(e)}")
+        except Exception as db_err:
+            logger.error(f"[Task {task_id}] Failed to update message {message_id} with error: {db_err}")
         task_store[task_id] = {
             "status": "failed",
             "result": None,
@@ -359,7 +363,7 @@ async def load_messages(req: LoadMessagesRequest):
 @app.post("/conversations/ask", status_code=202)
 async def ask_question(req: AskQuestionRequest):
     """Accepts user query, delegates LLM generation to a background thread, and returns immediately with a task_id."""
-    logger.info(f"Received /ask request for conversation_id: {req.conversation_id}")
+    logger.info(f"Received /ask request for conversation_id: {req.conversation_id}, query: {req.query}, use_internet: {req.use_internet}")
     
     if not req.query or not req.query.strip():
         logger.warning("Empty query received in /ask")
@@ -376,7 +380,12 @@ async def ask_question(req: AskQuestionRequest):
         history = database.get_messages(req.conversation_id, limit=10)
         logger.info(f"Fetched {len(history)} previous messages for context")
         
-        # 3. Create a task ID and register it as "processing"
+        # 3. Create placeholder message row with 'Generating response'
+        placeholder_msg = database.save_message(req.conversation_id, req.query, "Generating response")
+        message_id = placeholder_msg["id"]
+        logger.info(f"Created placeholder message {message_id} for conversation {req.conversation_id}")
+        
+        # 4. Create a task ID and register it as "processing"
         task_id = str(uuid.uuid4())
         task_store[task_id] = {
             "status": "processing",
@@ -384,16 +393,16 @@ async def ask_question(req: AskQuestionRequest):
             "error": None
         }
         
-        # 4. Dispatch background thread for LLM generation + DB save
+        # 5. Dispatch background thread for LLM generation + DB update
         thread = threading.Thread(
-            target=_process_ask_in_background,
-            args=(task_id, req.conversation_id, req.query, req.max_tokens, history, req.use_internet),
-            daemon=True
+            target = _process_ask_in_background,
+            args = (task_id, message_id, req.conversation_id, req.query, req.max_tokens, history, req.use_internet),
+            daemon = True
         )
         thread.start()
         logger.info(f"Dispatched background task {task_id} for conversation {req.conversation_id}")
         
-        # 5. Return immediately with 202 Accepted
+        # 6. Return immediately with 202 Accepted
         return {
             "status": "accepted",
             "task_id": task_id,

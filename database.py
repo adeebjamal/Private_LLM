@@ -118,6 +118,28 @@ def save_message(conv_id: int, query: str, resp: str):
         if conn:
             conn.close()
 
+def update_message_response(message_id: int, new_response: str):
+    """Update the response column of an existing message row."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            query_constants.UPDATE_MESSAGE_RESPONSE,
+            (new_response, message_id)
+        )
+        updated_msg = cursor.fetchone()
+        conn.commit()
+        return dict(updated_msg) if updated_msg else None
+    except Exception as e:
+        logger.error(f"Error updating message response: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 def get_messages(conv_id: int, limit: int = 10):
     """Return last N messages as LLM history format."""
     conn = None

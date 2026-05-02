@@ -34,6 +34,12 @@ INSERT_MESSAGE = """
             RETURNING id, conversation_id, user_query, response, created_at;
             """
 
+UPDATE_MESSAGE_RESPONSE = """
+            UPDATE messages SET response = %s
+            WHERE id = %s
+            RETURNING id, conversation_id, user_query, response, created_at;
+            """
+
 GET_MESSAGES_FOR_LLM = """
             SELECT user_query, response 
             FROM messages 
