@@ -55,7 +55,8 @@ def load_model():
         llm = Llama(
             model_path=model_path,
             n_ctx=4096,
-            n_threads=2, 
+            n_threads=2,
+            flash_attn=True,
             verbose=False
         )
         logger.info(f"Successfully loaded {filename}")
