@@ -11,10 +11,10 @@ def load_model():
     """Download (if needed) and load the GGUF model into memory."""
     global llm
     
-    # We will use Llama-3.1-8B-Instruct in 4-bit GGUF by default if not set
+    # We will use Gemma 4 E4B (Effective 4B) in 4-bit GGUF by default if not set
     # The user can still set a different GGUF model via env variables if they want
-    repo_id = os.environ.get("MODEL_ID", "bartowski/Llama-3.2-3B-Instruct-GGUF")
-    filename = os.environ.get("MODEL_FILENAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
+    repo_id = os.environ.get("MODEL_ID", "bartowski/google_gemma-4-E4B-it-GGUF")
+    filename = os.environ.get("MODEL_FILENAME", "google_gemma-4-E4B-it-Q4_K_M.gguf")
     logger.info(f"Loading model - MODEL_ID: {repo_id}, MODEL_FILENAME: {filename}")
     cache_dir = "./model_cache"
     

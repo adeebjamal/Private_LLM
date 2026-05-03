@@ -1,6 +1,6 @@
 fastapi==0.110.0
 uvicorn==0.29.0
-llama-cpp-python==0.2.90
+llama-cpp-python==0.3.22
 pydantic
 huggingface-hub
 psycopg2-binary
