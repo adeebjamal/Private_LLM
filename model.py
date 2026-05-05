@@ -48,13 +48,14 @@ def load_model():
         )
         
         logger.info(f"Loading model into memory from {model_path}...")
-        # Load the model via llama_cpp
-        # n_ctx is the context window. Llama 3 handles 8k easily, we'll set 4096 for RAM safety
+        # n_ctx is the total context window (input tokens + output tokens).
+        # 8192 is safe for a 4B GGUF model and prevents overflow errors on long
+        # conversations or web-augmented queries that would fail at 4096.
         # HARDCODE n_threads to 2. HF Spaces free tier only gives 2 vCPUs.
         # os.cpu_count() returns the host machine's cores (often 64+) which causes extreme thread thrashing and destroys performance.
         llm = Llama(
             model_path=model_path,
-            n_ctx=4096,
+            n_ctx=8192,
             n_threads=2,
             flash_attn=True,
             verbose=False
@@ -85,20 +86,45 @@ def generate_response_stream(history: list, query: str, max_new_tokens: int = 50
         
     messages.append({"role": "user", "content": query})
     
-    try:
-        # Use llama_cpp's built-in chat formatting with streaming enabled
-        response = llm.create_chat_completion(
-            messages=messages,
-            max_tokens=max_new_tokens,
-            temperature=0.7,
-            stream=True
-        )
-        
-        for chunk in response:
-            delta = chunk["choices"][0].get("delta", {})
-            if "content" in delta:
-                yield delta["content"]
-                
-    except Exception as e:
-        logger.error(f"Error generating response: {e}")
-        yield f"Error generating response: {e}"
+    # Retry loop: if the prompt is still too long for the context window after
+    # keeping the system message, drop the oldest user/assistant turn pair and
+    # try again. Stop retrying once only the system message + current query remain.
+    while True:
+        try:
+            response = llm.create_chat_completion(
+                messages=messages,
+                max_tokens=max_new_tokens,
+                temperature=0.7,
+                stream=True
+            )
+            for chunk in response:
+                delta = chunk["choices"][0].get("delta", {})
+                if "content" in delta:
+                    yield delta["content"]
+            return
+
+        except Exception as e:
+            err_str = str(e).lower()
+            if "exceed" in err_str and "context" in err_str:
+                # Find the oldest non-system, non-latest-user message pair to drop
+                # messages layout: [system?, ...history..., latest_user]
+                # History pairs are at indices 1..-2 (excluding system and last user msg)
+                start = 1 if messages[0].get("role") == "system" else 0
+                # Need at least one history turn (2 messages) to trim
+                if len(messages) - start > 2:
+                    logger.warning(
+                        f"Context window overflow ({e}). "
+                        f"Dropping oldest history turn and retrying. "
+                        f"Messages remaining: {len(messages) - 2}"
+                    )
+                    # Drop the oldest user+assistant pair (2 messages after system)
+                    messages = messages[:start] + messages[start + 2:]
+                    continue
+                # Nothing left to trim — surface a clean error
+                logger.error(f"Context window overflow even with minimal history: {e}")
+                yield "I'm sorry, your query is too long for me to process. Please try a shorter message or start a new conversation."
+                return
+            else:
+                logger.error(f"Error generating response: {e}")
+                yield f"Error generating response: {e}"
+                return
