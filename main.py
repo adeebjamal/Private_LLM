@@ -260,7 +260,8 @@ def _process_ask_in_background(task_id: str, message_id: int, conversation_id: i
         
         # 2. Update existing message row with the real response
         db_start = time.time()
-        final_response = f"{full_response.strip()}{_format_sources_block(web_results)}".strip()
+        # final_response = f"{full_response.strip()}{_format_sources_block(web_results)}".strip()
+        final_response = full_response.strip()
         updated_msg = database.update_message_response(message_id, final_response)
         logger.info(f"[Task {task_id}] Updated message {message_id} in DB in {time.time() - db_start:.2f}s")
         
