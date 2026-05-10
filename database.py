@@ -140,6 +140,24 @@ def update_message_response(message_id: int, new_response: str):
         if conn:
             conn.close()
 
+def update_conversation_updated_at(conv_id: int):
+    """Stamp updated_at = NOW() on the given conversation."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query_constants.UPDATE_CONVERSATION_UPDATED_AT, (conv_id,))
+        conn.commit()
+        logger.info(f"Touched updated_at for conversation {conv_id}")
+    except Exception as e:
+        logger.error(f"Error updating conversation updated_at: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 def get_messages(conv_id: int, limit: int = 10):
     """Return last N messages as LLM history format."""
     conn = None

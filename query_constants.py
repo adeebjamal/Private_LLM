@@ -2,7 +2,7 @@ CREATE_CONVERSATIONS_TABLE = """
             CREATE TABLE IF NOT EXISTS conversations (
                 id         SERIAL PRIMARY KEY,
                 title      VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
+                updated_at TIMESTAMP DEFAULT NOW()
             );
         """
 
@@ -16,17 +16,19 @@ CREATE_MESSAGES_TABLE = """
             );
         """
 
-INSERT_CONVERSATION = "INSERT INTO conversations (title) VALUES (%s) RETURNING id, title, created_at;"
+INSERT_CONVERSATION = "INSERT INTO conversations (title) VALUES (%s) RETURNING id, title, updated_at;"
 
 GET_ALL_CONVERSATIONS = """
-            SELECT c.id, c.title, c.created_at, COUNT(m.id) as message_count
+            SELECT c.id, c.title, c.updated_at, COUNT(m.id) as message_count
             FROM conversations c
             LEFT JOIN messages m ON c.id = m.conversation_id
-            GROUP BY c.id, c.title, c.created_at
-            ORDER BY c.created_at DESC;
+            GROUP BY c.id, c.title, c.updated_at
+            ORDER BY c.updated_at DESC;
         """
 
-GET_CONVERSATION_BY_ID = "SELECT id, title, created_at FROM conversations WHERE id = %s;"
+GET_CONVERSATION_BY_ID = "SELECT id, title, updated_at FROM conversations WHERE id = %s;"
+
+UPDATE_CONVERSATION_UPDATED_AT = "UPDATE conversations SET updated_at = NOW() WHERE id = %s;"
 
 INSERT_MESSAGE = """
             INSERT INTO messages (conversation_id, user_query, response) 
@@ -58,7 +60,7 @@ GET_PAGINATED_MESSAGES = """
             OFFSET %s LIMIT %s;
             """
 
-RENAME_CONVERSATION = "UPDATE conversations SET title = %s WHERE id = %s RETURNING id, title, created_at;"
+RENAME_CONVERSATION = "UPDATE conversations SET title = %s WHERE id = %s RETURNING id, title, updated_at;"
 
 DELETE_MESSAGES_BY_CONVERSATION = "DELETE FROM messages WHERE conversation_id = %s;"
 

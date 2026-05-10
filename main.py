@@ -304,8 +304,8 @@ async def get_conversations():
         conversations = database.get_all_conversations()
         # Format dates as ISO strings
         for c in conversations:
-            if 'created_at' in c and c['created_at']:
-                c['created_at'] = c['created_at'].isoformat()
+            if 'updated_at' in c and c['updated_at']:
+                c['updated_at'] = c['updated_at'].isoformat()
         return {"conversations": conversations}
     except Exception as e:
         logger.error(f"Error fetching conversations: {e}")
@@ -319,8 +319,8 @@ async def create_conversation(req: CreateConversationRequest):
         
     try:
         conv = database.create_conversation(req.title)
-        if 'created_at' in conv and conv['created_at']:
-            conv['created_at'] = conv['created_at'].isoformat()
+        if 'updated_at' in conv and conv['updated_at']:
+            conv['updated_at'] = conv['updated_at'].isoformat()
         return conv
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
@@ -386,7 +386,11 @@ async def ask_question(req: AskQuestionRequest):
         message_id = placeholder_msg["id"]
         logger.info(f"Created placeholder message {message_id} for conversation {req.conversation_id}")
         
-        # 4. Create a task ID and register it as "processing"
+        # 4. Stamp updated_at on the conversation (before returning 202)
+        database.update_conversation_updated_at(req.conversation_id)
+        logger.info(f"Stamped updated_at for conversation {req.conversation_id}")
+        
+        # 5. Create a task ID and register it as "processing"
         task_id = str(uuid.uuid4())
         task_store[task_id] = {
             "status": "processing",
@@ -394,7 +398,7 @@ async def ask_question(req: AskQuestionRequest):
             "error": None
         }
         
-        # 5. Dispatch background thread for LLM generation + DB update
+        # 6. Dispatch background thread for LLM generation + DB update
         thread = threading.Thread(
             target = _process_ask_in_background,
             args = (task_id, message_id, req.conversation_id, req.query, req.max_tokens, history, req.use_internet),
@@ -403,7 +407,7 @@ async def ask_question(req: AskQuestionRequest):
         thread.start()
         logger.info(f"Dispatched background task {task_id} for conversation {req.conversation_id}")
         
-        # 6. Return immediately with 202 Accepted
+        # 7. Return immediately with 202 Accepted
         return {
             "status": "accepted",
             "task_id": task_id,
@@ -455,8 +459,8 @@ async def rename_conversation(req: RenameConversationRequest):
             raise HTTPException(status_code=404, detail="conversation_id not found")
 
         updated = database.rename_conversation(req.conversation_id, req.new_name.strip())
-        if updated and 'created_at' in updated and updated['created_at']:
-            updated['created_at'] = updated['created_at'].isoformat()
+        if updated and 'updated_at' in updated and updated['updated_at']:
+            updated['updated_at'] = updated['updated_at'].isoformat()
         return updated
     except HTTPException:
         raise
