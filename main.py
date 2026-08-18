@@ -175,6 +175,7 @@ def _fetch_article_text(url: str, max_chars: int = 3000) -> str:
             or soup.find(id="main-content")
             or soup.find("body")
         )
+        
         if not content_el:
             return ""
 
