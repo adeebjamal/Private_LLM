@@ -457,7 +457,7 @@ async def rename_conversation(req: RenameConversationRequest):
     try:
         conv = database.get_conversation(req.conversation_id)
         if not conv:
-            raise HTTPException(status_code=404, detail="conversation_id not found")
+            raise HTTPException(status_code = 404, detail = "conversation_id not found")
 
         updated = database.rename_conversation(req.conversation_id, req.new_name.strip())
         if updated and 'updated_at' in updated and updated['updated_at']:
